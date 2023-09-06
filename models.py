@@ -12,6 +12,7 @@ from torch.nn import Conv1d, ConvTranspose1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
 import activations
+from san_modules import SANConv2d
 from utils import init_weights, get_padding
 from alias_free_torch import *
 
@@ -121,10 +122,10 @@ class AMPBlock2(torch.nn.Module):
             remove_weight_norm(l)
 
 
-class BigVGAN(torch.nn.Module):
-    # this is our main BigVGAN model. Applies anti-aliased periodic activation for resblocks.
+class BigVSAN(torch.nn.Module):
+    # this is our main BigVSAN model. Applies anti-aliased periodic activation for resblocks.
     def __init__(self, h):
-        super(BigVGAN, self).__init__()
+        super(BigVSAN, self).__init__()
         self.h = h
 
         self.num_kernels = len(h.resblock_kernel_sizes)
@@ -133,7 +134,7 @@ class BigVGAN(torch.nn.Module):
         # pre conv
         self.conv_pre = weight_norm(Conv1d(h.num_mels, h.upsample_initial_channel, 7, 1, padding=3))
 
-        # define which AMPBlock to use. BigVGAN uses AMPBlock1 as default
+        # define which AMPBlock to use. BigVSAN uses AMPBlock1 as default
         resblock = AMPBlock1 if h.resblock == '1' else AMPBlock2
 
         # transposed conv-based upsamplers. does not apply anti-aliasing
@@ -217,9 +218,9 @@ class DiscriminatorP(torch.nn.Module):
             norm_f(Conv2d(int(512*self.d_mult), int(1024*self.d_mult), (kernel_size, 1), (stride, 1), padding=(get_padding(5, 1), 0))),
             norm_f(Conv2d(int(1024*self.d_mult), int(1024*self.d_mult), (kernel_size, 1), 1, padding=(2, 0))),
         ])
-        self.conv_post = norm_f(Conv2d(int(1024*self.d_mult), 1, (3, 1), 1, padding=(1, 0)))
+        self.conv_post = SANConv2d(int(1024*self.d_mult), 1, (3, 1), 1, padding=(1, 0))
 
-    def forward(self, x):
+    def forward(self, x, flg_train=False):
         fmap = []
 
         # 1d to 2d
@@ -234,9 +235,16 @@ class DiscriminatorP(torch.nn.Module):
             x = l(x)
             x = F.leaky_relu(x, LRELU_SLOPE)
             fmap.append(x)
-        x = self.conv_post(x)
-        fmap.append(x)
-        x = torch.flatten(x, 1, -1)
+        x = self.conv_post(x, flg_train=flg_train)
+        if flg_train:
+            x_fun, x_dir = x
+            fmap.append(x_fun)
+            x_fun = torch.flatten(x_fun, 1, -1)
+            x_dir = torch.flatten(x_dir, 1, -1)
+            x = [x_fun, x_dir]
+        else:
+            fmap.append(x)
+            x = torch.flatten(x, 1, -1)
 
         return x, fmap
 
@@ -249,14 +257,14 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         discriminators = [DiscriminatorP(h, rs, use_spectral_norm=h.use_spectral_norm) for rs in self.mpd_reshapes]
         self.discriminators = nn.ModuleList(discriminators)
 
-    def forward(self, y, y_hat):
+    def forward(self, y, y_hat, flg_train=False):
         y_d_rs = []
         y_d_gs = []
         fmap_rs = []
         fmap_gs = []
         for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
+            y_d_r, fmap_r = d(y, flg_train=flg_train)
+            y_d_g, fmap_g = d(y_hat, flg_train=flg_train)
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)
@@ -290,9 +298,9 @@ class DiscriminatorR(nn.Module):
             norm_f(nn.Conv2d(int(32*self.d_mult), int(32*self.d_mult), (3, 9), stride=(1, 2), padding=(1, 4))),
             norm_f(nn.Conv2d(int(32*self.d_mult), int(32*self.d_mult), (3, 3), padding=(1, 1))),
         ])
-        self.conv_post = norm_f(nn.Conv2d(int(32 * self.d_mult), 1, (3, 3), padding=(1, 1)))
+        self.conv_post = SANConv2d(int(32 * self.d_mult), 1, (3, 3), padding=(1, 1))
 
-    def forward(self, x):
+    def forward(self, x, flg_train=False):
         fmap = []
 
         x = self.spectrogram(x)
@@ -301,9 +309,16 @@ class DiscriminatorR(nn.Module):
             x = l(x)
             x = F.leaky_relu(x, self.lrelu_slope)
             fmap.append(x)
-        x = self.conv_post(x)
-        fmap.append(x)
-        x = torch.flatten(x, 1, -1)
+        x = self.conv_post(x, flg_train=flg_train)
+        if flg_train:
+            x_fun, x_dir = x
+            fmap.append(x_fun)
+            x_fun = torch.flatten(x_fun, 1, -1)
+            x_dir = torch.flatten(x_dir, 1, -1)
+            x = [x_fun, x_dir]
+        else:
+            fmap.append(x)
+            x = torch.flatten(x, 1, -1)
 
         return x, fmap
 
@@ -329,15 +344,15 @@ class MultiResolutionDiscriminator(nn.Module):
             [DiscriminatorR(cfg, resolution) for resolution in self.resolutions]
         )
 
-    def forward(self, y, y_hat):
+    def forward(self, y, y_hat, flg_train=False):
         y_d_rs = []
         y_d_gs = []
         fmap_rs = []
         fmap_gs = []
 
         for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(x=y)
-            y_d_g, fmap_g = d(x=y_hat)
+            y_d_r, fmap_r = d(x=y, flg_train=flg_train)
+            y_d_g, fmap_g = d(x=y_hat, flg_train=flg_train)
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)
@@ -360,8 +375,14 @@ def discriminator_loss(disc_real_outputs, disc_generated_outputs):
     r_losses = []
     g_losses = []
     for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
-        r_loss = torch.mean((1-dr)**2)
-        g_loss = torch.mean(dg**2)
+        dr_fun, dr_dir = dr
+        dg_fun, dg_dir = dg
+        r_loss_fun = torch.mean(F.softplus(1-dr_fun)**2)
+        g_loss_fun = torch.mean(F.softplus(dg_fun)**2)
+        r_loss_dir = torch.mean(F.softplus(1-dr_dir)**2)
+        g_loss_dir = torch.mean(-F.softplus(1-dg_dir)**2)
+        r_loss = r_loss_fun + r_loss_dir
+        g_loss = g_loss_fun + g_loss_dir
         loss += (r_loss + g_loss)
         r_losses.append(r_loss.item())
         g_losses.append(g_loss.item())
@@ -373,7 +394,7 @@ def generator_loss(disc_outputs):
     loss = 0
     gen_losses = []
     for dg in disc_outputs:
-        l = torch.mean((1-dg)**2)
+        l = torch.mean(F.softplus(1-dg)**2)
         gen_losses.append(l)
         loss += l
 

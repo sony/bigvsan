@@ -21,7 +21,7 @@ from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from env import AttrDict, build_env
 from meldataset import MelDataset, mel_spectrogram, get_dataset_filelist, MAX_WAV_VALUE
-from models import BigVGAN, MultiPeriodDiscriminator, MultiResolutionDiscriminator,\
+from models import BigVSAN, MultiPeriodDiscriminator, MultiResolutionDiscriminator,\
     feature_loss, generator_loss, discriminator_loss
 from utils import plot_spectrogram, plot_spectrogram_clipped, scan_checkpoint, load_checkpoint, save_checkpoint, save_audio
 import torchaudio as ta
@@ -42,15 +42,15 @@ def train(rank, a, h):
     torch.cuda.set_device(rank)
     device = torch.device('cuda:{:d}'.format(rank))
 
-    # define BigVGAN generator
-    generator = BigVGAN(h).to(device)
+    # define BigVSAN generator
+    generator = BigVSAN(h).to(device)
     print("Generator params: {}".format(sum(p.numel() for p in generator.parameters())))
 
     # define discriminators. MPD is used by default
     mpd = MultiPeriodDiscriminator(h).to(device)
     print("Discriminator mpd params: {}".format(sum(p.numel() for p in mpd.parameters())))
 
-    # define additional discriminators. BigVGAN uses MRD as default
+    # define additional discriminators. BigVSAN uses MRD as default
     mrd = MultiResolutionDiscriminator(h).to(device)
     print("Discriminator mrd params: {}".format(sum(p.numel() for p in mrd.parameters())))
 
@@ -83,6 +83,10 @@ def train(rank, a, h):
         generator = DistributedDataParallel(generator, device_ids=[rank]).to(device)
         mpd = DistributedDataParallel(mpd, device_ids=[rank]).to(device)
         mrd = DistributedDataParallel(mrd, device_ids=[rank]).to(device)
+    for d in (mpd.module if h.num_gpus > 1 else mpd).discriminators:
+        d.conv_post.normalize_weight()
+    for d in (mrd.module if h.num_gpus > 1 else mrd).discriminators:
+        d.conv_post.normalize_weight()
 
     optim_g = torch.optim.AdamW(generator.parameters(), h.learning_rate, betas=[h.adam_b1, h.adam_b2])
     optim_d = torch.optim.AdamW(itertools.chain(mrd.parameters(), mpd.parameters()),
@@ -267,11 +271,11 @@ def train(rank, a, h):
             optim_d.zero_grad()
 
             # MPD
-            y_df_hat_r, y_df_hat_g, _, _ = mpd(y, y_g_hat.detach())
+            y_df_hat_r, y_df_hat_g, _, _ = mpd(y, y_g_hat.detach(), flg_train=True)
             loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(y_df_hat_r, y_df_hat_g)
 
             # MRD
-            y_ds_hat_r, y_ds_hat_g, _, _ = mrd(y, y_g_hat.detach())
+            y_ds_hat_r, y_ds_hat_g, _, _ = mrd(y, y_g_hat.detach(), flg_train=True)
             loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
 
             loss_disc_all = loss_disc_s + loss_disc_f
@@ -282,6 +286,10 @@ def train(rank, a, h):
                 grad_norm_mpd = torch.nn.utils.clip_grad_norm_(mpd.parameters(), 1000.)
                 grad_norm_mrd = torch.nn.utils.clip_grad_norm_(mrd.parameters(), 1000.)
                 optim_d.step()
+                for d in (mpd.module if h.num_gpus > 1 else mpd).discriminators:
+                    d.conv_post.normalize_weight()
+                for d in (mrd.module if h.num_gpus > 1 else mrd).discriminators:
+                    d.conv_post.normalize_weight()
             else:
                 print("WARNING: skipping D training for the first {} steps".format(a.freeze_step))
                 grad_norm_mpd = 0.
@@ -391,7 +399,7 @@ def main():
     parser.add_argument('--list_input_unseen_wavs_dir', nargs='+', default=['LibriTTS', 'LibriTTS'])
     parser.add_argument('--list_input_unseen_validation_file', nargs='+', default=['LibriTTS/dev-clean.txt', 'LibriTTS/dev-other.txt'])
 
-    parser.add_argument('--checkpoint_path', default='exp/bigvgan')
+    parser.add_argument('--checkpoint_path', default='exp/bigvsan')
     parser.add_argument('--config', default='')
 
     parser.add_argument('--training_epochs', default=100000, type=int)

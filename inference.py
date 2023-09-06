@@ -11,7 +11,7 @@ import torch
 from scipy.io.wavfile import write
 from env import AttrDict
 from meldataset import mel_spectrogram, MAX_WAV_VALUE
-from models import BigVGAN as Generator
+from models import BigVSAN as Generator
 import librosa
 
 h = None
