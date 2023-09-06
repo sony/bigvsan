@@ -1,4 +1,4 @@
-torch
+torch==1.13.0
 numpy
 librosa==0.8.1
 scipy
@@ -6,5 +6,5 @@ tensorboard
 soundfile
 matplotlib
 pesq
-auraloss
+auraloss<0.4
 tqdm
