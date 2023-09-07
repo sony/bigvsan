@@ -1,17 +1,19 @@
-## BigVGAN: A Universal Neural Vocoder with Large-Scale Training
-#### Sang-gil Lee, Wei Ping, Boris Ginsburg, Bryan Catanzaro, Sungroh Yoon
+# BigVSAN
 
-<center><img src="https://user-images.githubusercontent.com/15963413/218609148-881e39df-33af-4af9-ab95-1427c4ebf062.png" width="800"></center>
+This repository contains the official PyTorch implementation of **"BigVSAN: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network"** (*[arXiv 2309.02836](https://arxiv.org/abs/2309.02836)*).
+Please cite [[1](#citation)] in your work when using this code in your experiments.
 
-
-### [Paper](https://arxiv.org/abs/2206.04658)
-### [Audio demo](https://bigvgan-demo.github.io/)
+### [Audio demo](https://takashishibuyasony.github.io/bigvsan/)
 
 ## Installation
+This repository builds on the codebase of [BigVGAN](https://github.com/NVIDIA/BigVGAN).
+
+Download the LibriTTS dataset [here](http://www.openslr.org/60/) in advance.
+
 Clone the repository and install dependencies.
 ```shell
-# the codebase has been tested on Python 3.8 / 3.10 with PyTorch 1.12.1 / 1.13 conda binaries
-git clone https://github.com/NVIDIA/BigVGAN
+# the codebase has been tested on Python 3.8 with PyTorch 1.13.0
+git clone https://github.com/sony/bigvsan
 pip install -r requirements.txt
 ```
 
@@ -29,61 +31,74 @@ cd ..
 ```
 
 ## Training
-Train BigVGAN model. Below is an example command for training BigVGAN using LibriTTS dataset at 24kHz with a full 100-band mel spectrogram as input.
+Train BigVSAN model. Below is an example command for training BigVSAN using LibriTTS dataset at 24kHz with a full 100-band mel spectrogram as input.
 ```shell
 python train.py \
---config configs/bigvgan_24khz_100band.json \
+--config configs/bigvsan_24khz_100band.json \
 --input_wavs_dir LibriTTS \
 --input_training_file LibriTTS/train-full.txt \
 --input_validation_file LibriTTS/val-full.txt \
 --list_input_unseen_wavs_dir LibriTTS LibriTTS \
 --list_input_unseen_validation_file LibriTTS/dev-clean.txt LibriTTS/dev-other.txt \
---checkpoint_path exp/bigvgan
+--checkpoint_path exp/bigvsan
 ```
 
+## Evaluation
+We evaluated our BigVSAN model as follows:
+
+Generate and save audio samples after you finish model training. Below is an example command for generating and save audio samples for evaluation.
+```shell
+python train.py \
+--config configs/bigvsan_24khz_100band.json \
+--input_wavs_dir LibriTTS \
+--input_training_file LibriTTS/train-full.txt \
+--input_validation_file LibriTTS/val-full.txt \
+--list_input_unseen_wavs_dir LibriTTS LibriTTS \
+--list_input_unseen_validation_file LibriTTS/dev-clean.txt LibriTTS/dev-other.txt \
+--checkpoint_path exp/bigvsan \
+--evaluate True \
+--eval_subsample 1 \
+--skip_seen True \
+--save_audio True
+```
+
+Run the evaluation tool provided [here](https://github.com/sony/bigvsan_eval). It computes five objective metric scores: M-STFT, PESQ, MCD, Periodicity, and V/UV F1.
+```shell
+python evaluate.py \
+../bigvsan/exp/bigvsan/samples/gt_unseen_LibriTTS-dev-clean ../bigvsan/exp/bigvsan/samples/unseen_LibriTTS-dev-clean_01000001 \
+../bigvsan/exp/bigvsan/samples/gt_unseen_LibriTTS-dev-other ../bigvsan/exp/bigvsan/samples/unseen_LibriTTS-dev-other_01000001
+```
+It will take about an hour to complete an evaluation. Note that, when audio samples are generated and saved with `train.py`, it also outputs M-STFT and PESQ scores, but their values will be different from the output of `evaluate.py`. This is due to 16-bit quantization for saving a sample as a wav file.
+
+
 ## Synthesis
-Synthesize from BigVGAN model. Below is an example command for generating audio from the model.
+Synthesize from BigVSAN model. Below is an example command for generating audio from the model.
 It computes mel spectrograms using wav files from `--input_wavs_dir` and saves the generated audio to `--output_dir`.
 ```shell
 python inference.py \
---checkpoint_file exp/bigvgan/g_05000000 \
+--checkpoint_file exp/bigvsan/g_01000000 \
 --input_wavs_dir /path/to/your/input_wav \
 --output_dir /path/to/your/output_wav
 ```
 
-`inference_e2e.py` supports synthesis directly from the mel spectrogram saved in `.npy` format, with shapes `[1, channel, frame]` or `[channel, frame]`.
-It loads mel spectrograms from `--input_mels_dir` and saves the generated audio to `--output_dir`.
-
-Make sure that the STFT hyperparameters for mel spectrogram are the same as the model, which are defined in `config.json` of the corresponding model.
-```shell
-python inference_e2e.py \
---checkpoint_file exp/bigvgan/g_05000000 \
---input_mels_dir /path/to/your/input_mel \
---output_dir /path/to/your/output_wav
+## Citation
+[1] Shibuya, T., Takida, Y., Mitsufuji, Y.,
+"BigVSAN: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network,"
+Preprint.
+```bibtex
+@ARTICLE{shibuya2023bigvsan,
+    author={Shibuya, Takashi and Takida, Yuhta and Mitsufuji, Yuki},
+    title={{BigVSAN}: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network},
+    journal={Computing Research Repository},
+    volume={arXiv:2309.02836},
+    year={2023},
+    url={https://arxiv.org/abs/2309.02836},
+    }
 ```
 
-## Pretrained Models
-We provide the [pretrained models](https://drive.google.com/drive/folders/1e9wdM29d-t3EHUpBb8T4dcHrkYGAXTgq).
-One can download the checkpoints of generator (e.g., g_05000000) and discriminator (e.g., do_05000000) within the listed folders.
-
-|Folder Name|Sampling Rate|Mel band|fmax|Params.|Dataset|Fine-Tuned|
-|------|---|---|---|---|------|---|
-|bigvgan_24khz_100band|24 kHz|100|12000|112M|LibriTTS|No|
-|bigvgan_base_24khz_100band|24 kHz|100|12000|14M|LibriTTS|No|
-|bigvgan_22khz_80band|22 kHz|80|8000|112M|LibriTTS + VCTK + LJSpeech|No|
-|bigvgan_base_22khz_80band|22 kHz|80|8000|14M|LibriTTS + VCTK + LJSpeech|No|
-
-The paper results are based on 24kHz BigVGAN models trained on LibriTTS dataset.
-We also provide 22kHz BigVGAN models with band-limited setup (i.e., fmax=8000) for TTS applications.
-Note that, the latest checkpoints use ``snakebeta`` activation with log scale parameterization, which have the best overall quality.
-
-
-## TODO
-
-Current codebase only provides a plain PyTorch implementation for the filtered nonlinearity. We are working on a fast CUDA kernel implementation, which will be released in the future. 
-
-
 ## References
+* [BigVGAN](https://github.com/NVIDIA/BigVGAN)
+
 * [HiFi-GAN](https://github.com/jik876/hifi-gan) (for generator and multi-period discriminator)
 
 * [Snake](https://github.com/EdwardDixon/snake) (for periodic activation)
