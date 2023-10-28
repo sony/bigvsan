@@ -81,6 +81,17 @@ python inference.py \
 --output_dir /path/to/your/output_wav
 ```
 
+## Pretrained Models
+We provide pretrained checkpoints trained on the LibriTTS dataset [here](https://zenodo.org/records/10037439).
+You can download zip files, each of which contains checkpoints of a generator (e.g., g_01000000) and a discriminator (e.g., do_01000000).
+
+|Zip file name|# of training steps|M-STFT|PESQ|MCD|Periodicity|V/UV F1|
+|---|---|---|---|---|---|---|
+|`bigvsan_01mstep`|1,000,000|0.7881|4.116|0.3381|0.0935|0.9635|
+|`bigvsan_10mstep`|10,000,000|0.7210|4.316|0.3065|0.0726|0.9729|
+
+The paper results are based on `bigvsan_01mstep`.
+
 ## Citation
 [1] Shibuya, T., Takida, Y., Mitsufuji, Y.,
 "BigVSAN: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network,"
