@@ -1,4 +1,4 @@
-# BigVSAN
+# BigVSAN [ICASSP 2024]
 
 This repository contains the official PyTorch implementation of **"BigVSAN: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network"** (*[arXiv 2309.02836](https://arxiv.org/abs/2309.02836)*).
 Please cite [[1](#citation)] in your work when using this code in your experiments.
@@ -95,16 +95,14 @@ The paper results are based on `bigvsan_01mstep`.
 ## Citation
 [1] Shibuya, T., Takida, Y., Mitsufuji, Y.,
 "BigVSAN: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network,"
-Preprint.
+ICASSP 2024.
 ```bibtex
-@ARTICLE{shibuya2023bigvsan,
-    author={Shibuya, Takashi and Takida, Yuhta and Mitsufuji, Yuki},
-    title={{BigVSAN}: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network},
-    journal={Computing Research Repository},
-    volume={arXiv:2309.02836},
-    year={2023},
-    url={https://arxiv.org/abs/2309.02836},
-    }
+@inproceedings{shibuya2024bigvsan,
+        title={{BigVSAN}: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network},
+        author={Shibuya, Takashi and Takida, Yuhta and Mitsufuji, Yuki},
+        booktitle={ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
+        year={2024}
+}
 ```
 
 ## References
