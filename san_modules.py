@@ -8,6 +8,47 @@ def _normalize(tensor, dim):
     return tensor / denom
 
 
+class SANLinear(nn.Linear):
+
+    def __init__(self,
+                 in_features,
+                 out_features,
+                 bias=True,
+                 device=None,
+                 dtype=None
+                 ):
+        super(SANLinear, self).__init__(
+            in_features, out_features, bias=bias, device=device, dtype=dtype)
+        scale = self.weight.norm(p=2.0, dim=1, keepdim=True).clamp_min(1e-12)
+        self.weight = nn.parameter.Parameter(self.weight / scale.expand_as(self.weight))
+        self.scale = nn.parameter.Parameter(scale.view(out_features))
+        if bias:
+            self.bias = nn.parameter.Parameter(torch.zeros(in_features, device=device, dtype=dtype))
+        else:
+            self.register_parameter('bias', None)
+
+    def forward(self, input, flg_train=False):
+        if self.bias is not None:
+            input = input + self.bias
+        normalized_weight = self._get_normalized_weight()
+        scale = self.scale
+        if flg_train:
+            out_fun = F.linear(input, normalized_weight.detach(), None)
+            out_dir = F.linear(input.detach(), normalized_weight, None)
+            out = [out_fun * scale, out_dir * scale.detach()]
+        else:
+            out = F.linear(input, normalized_weight, None)
+            out = out * scale
+        return out
+
+    @torch.no_grad()
+    def normalize_weight(self):
+        self.weight.data = self._get_normalized_weight()
+
+    def _get_normalized_weight(self):
+        return _normalize(self.weight, dim=1)
+
+
 class SANConv1d(nn.Conv1d):
 
     def __init__(self,
