@@ -115,5 +115,3 @@ ICASSP 2024.
 * [Alias-free-torch](https://github.com/junjun3518/alias-free-torch) (for anti-aliasing)
 
 * [Julius](https://github.com/adefossez/julius) (for low-pass filter)
-
-* [UnivNet](https://github.com/mindslab-ai/univnet) (for multi-resolution discriminator)
