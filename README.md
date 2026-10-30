@@ -1,6 +1,26 @@
-# BigVSAN [ICASSP 2024]
+# BigVSAN [ICASSP 2024] — 8b-is Sovereign `p/q` + `BFP-64` Edition
 
-This repository contains the official PyTorch implementation of **"BigVSAN: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network"** (*[arXiv 2309.02836](https://arxiv.org/abs/2309.02836)*).
+[![Org](https://img.shields.io/badge/org-8b--is-purple.svg)](https://github.com/8b-is)
+[![Upstream](https://img.shields.io/badge/upstream-sony%2Fbigvsan-lightgrey.svg)](https://github.com/sony/bigvsan)
+[![IndexTTS-Rust](https://img.shields.io/badge/8b--is-IndexTTS--Rust-blue.svg)](https://github.com/8b-is/IndexTTS-Rust)
+[![kokoro-tiny](https://img.shields.io/badge/8b--is-kokoro--tiny-green.svg)](https://github.com/8b-is/kokoro-tiny)
+
+This repository contains the official PyTorch implementation of **"BigVSAN: Enhancing GAN-based Neural Vocoders with Slicing Adversarial Network"** (*[arXiv 2309.02836](https://arxiv.org/abs/2309.02836)*), enhanced with the **8b-is Sovereign `p/q` ("Counting Divided") + Omni `BFP-64` + Quantum 64-Trit** audio substrate (`bigvsan_pq.py`).
+
+### 8b-is Sovereign Audio & SAN Enhancements (`bigvsan_pq.py`)
+
+1. **$\mathbb{Z}_{2^{32}}$ Modular Phase-Ring `SnakePq` & `SnakeBetaPq` (transcendental-free)**:
+   Replaces per-sample transcendental `sin(alpha * x)^2` in `activations.py` with modular integer phase wrap (`phase_u32 = int(x * step) & 0xFFFFFFFF`) and a precomputed `p/q` ($q = 2^{20}$) $\sin^2$ lookup table. This targets hardware without a transcendental unit (NPU/embedded) and fused/compiled kernels; on CPython the pure-Python path is slower than the C `math.sin` call (`BIGVSAN_BENCH=1` measures ~0.5-0.7x). Aligned with [`8b-is/IndexTTS-Rust`](https://github.com/8b-is/IndexTTS-Rust) and [`8b-is/kokoro-tiny`](https://github.com/8b-is/kokoro-tiny).
+2. **Bitplane `POPCNT` Spherical Normalization for Slicing Adversarial Networks (`QuantumSANLinearPq`)**:
+   In `san_modules.py`, `SANLinear` normalizes each slice direction $w_j$ onto the unit sphere $\mathbb{S}^{D-1}$ via $\hat{w}_j = w_j / \|w_j\|_2$. When slice directions are quantized to ternary $w_j \in \{-1, 0, +1\}^D$ packed into 64-trit bitplanes (`pos_mask: u64`, `neg_mask: u64`), since $(-1)^2 = 1^2 = 1$ and $0^2 = 0$, the squared L2 norm is **exact bitplane popcount**:
+   $$\|w_j\|_2^2 = \sum_{k=0}^{D-1} w_{j,k}^2 = \text{popcount}(\text{pos\_mask}_j \mid \text{neg\_mask}_j)$$
+   turning SAN's weight normalization into a single CPU `POPCNT` + integer `isqrt` instruction and executing the inner product via `BFP-64` (`i16 -> i64`) integer accumulation ([`8b-is/alexiai`](https://github.com/8b-is/alexiai)).
+
+```bash
+# Run the offline 8b-is p/q + Quantum SAN verification suite (< 5ms, zero external dependencies)
+python3 -m unittest discover -s tests -v
+```
+
 Please cite [[1](#citation)] in your work when using this code in your experiments.
 
 ### [Audio demo](https://takashishibuyasony.github.io/bigvsan/)
